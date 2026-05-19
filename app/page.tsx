@@ -104,7 +104,7 @@ export default function BmsDashboard() {
       try {
         const mqtt = await import('mqtt');
 
-        const brokerUrl = 'ws://broker.hivemq.com:8000/mqtt';
+        const brokerUrl = 'wss://broker.hivemq.com:8884/mqtt';
         const topic = 'taras_bachelor_bms/status';
 
         addLog(`Connecting to External Broker: ${brokerUrl}`);
