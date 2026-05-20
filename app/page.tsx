@@ -1,27 +1,19 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import type { MqttClient } from 'mqtt';
 import {
   Activity,
-  Battery,
-  BatteryCharging,
   Zap,
   Cpu,
   Thermometer,
   ShieldAlert,
   ShieldCheck,
   Clock,
-  RefreshCw,
   Sun,
-  Moon,
   ToggleLeft,
   ToggleRight,
-  Wifi,
-  WifiOff,
-  Play,
-  Pause,
   AlertTriangle,
-  RotateCcw,
   Sparkles,
   TrendingDown,
   TrendingUp,
@@ -74,14 +66,14 @@ export default function BmsDashboard() {
   const [mqttLogs, setMqttLogs] = useState<string[]>([]);
 
   // Refs
-  const mqttClientRef = useRef<any>(null);
+  const mqttClientRef = useRef<MqttClient | null>(null);
   const diagnosticIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Helper function to append to terminal logs
-  const addLog = (msg: string) => {
+  const addLog = useCallback((msg: string) => {
     const time = new Date().toLocaleTimeString();
     setMqttLogs(prev => [`[${time}] ${msg}`, ...prev.slice(0, 49)]);
-  };
+  }, []);
 
   // 1. MQTT Connection Hook
   useEffect(() => {
@@ -91,14 +83,16 @@ export default function BmsDashboard() {
         mqttClientRef.current.end();
         mqttClientRef.current = null;
       }
-      setConnectionStatus('connected');
-      return;
+      const timer = setTimeout(() => setConnectionStatus('connected'), 0);
+      return () => { clearTimeout(timer); };
     }
 
-    addLog("Initializing WebSockets MQTT gateway connection...");
-    setConnectionStatus('connecting');
+    setTimeout(() => {
+      addLog("Initializing WebSockets MQTT gateway connection...");
+      setConnectionStatus('connecting');
+    }, 0);
 
-    let client: any;
+    let client: MqttClient | null = null;
 
     const connectMqtt = async () => {
       try {
@@ -122,7 +116,7 @@ export default function BmsDashboard() {
           setConnectionStatus('connected');
           addLog(`Successfully ESTABLISHED LINK to Broker!`);
           addLog(`Subscribing to telemetry stream: "${topic}"...`);
-          client.subscribe(topic, (err: any) => {
+          client!.subscribe(topic, (err: Error | null) => {
             if (err) {
               addLog(`Stream subscription error: ${err.message}`);
               setConnectionStatus('error');
@@ -180,7 +174,7 @@ export default function BmsDashboard() {
           addLog("Gateway connection dropped.");
         });
 
-        client.on('error', (err: any) => {
+        client.on('error', (err: Error) => {
           setConnectionStatus('error');
           addLog(`Network Error: ${err.message}`);
         });
@@ -199,7 +193,7 @@ export default function BmsDashboard() {
         client.end();
       }
     };
-  }, [diagnosticMode]);
+  }, [diagnosticMode, addLog]);
 
   // 2. Hardware Diagnostic Engine Hook
   useEffect(() => {
@@ -211,7 +205,7 @@ export default function BmsDashboard() {
       return;
     }
 
-    addLog("Local diagnostic engine active. Reading from internal sensor buffer...");
+    const logReady = setTimeout(() => addLog("Local diagnostic engine active. Reading from internal sensor buffer..."), 0);
 
     let chargeDirection: 'charging' | 'discharging' | 'idle' = 'charging';
     let currentSoc = 78.5;
@@ -306,8 +300,8 @@ export default function BmsDashboard() {
 
       currentUptime += 1 / 3600;
 
-      const chg_mos = currentAmps >= 0 ? 'ON' : 'ON';
-      const dsg_mos = currentAmps <= 0 ? 'ON' : 'ON';
+      const chg_mos = currentAmps >= 0 ? 'ON' : 'OFF';
+      const dsg_mos = currentAmps <= 0 ? 'ON' : 'OFF';
       const chargeMode = currentAmps > 0.5 ? 'DAY' : 'NIGHT';
 
       let alarms = 'NONE';
@@ -351,11 +345,12 @@ export default function BmsDashboard() {
     diagnosticIntervalRef.current = setInterval(runDiagnostics, 1000);
 
     return () => {
+      clearTimeout(logReady);
       if (diagnosticIntervalRef.current) {
         clearInterval(diagnosticIntervalRef.current);
       }
     };
-  }, [diagnosticMode]);
+  }, [diagnosticMode, addLog]);
 
   if (!telemetry) {
     return (
@@ -399,7 +394,6 @@ export default function BmsDashboard() {
 
   const isCharging = telemetry.current_amps > 0.05;
   const isDischarging = telemetry.current_amps < -0.05;
-  const isIdle = !isCharging && !isDischarging;
 
   const currentStatusText = isCharging ? "CHARGING" : isDischarging ? "DISCHARGING" : "IDLE";
 
